@@ -1,3 +1,6 @@
+param meanings from this link: https://lscsoft.docs.ligo.org/pesummary/unstable_docs/gw/parameters.html
+
+
 log_likelihood
 the logarithm of the likelihood
 
