@@ -1,5 +1,5 @@
 param meanings from this link: https://lscsoft.docs.ligo.org/pesummary/unstable_docs/gw/parameters.html
-
+data downloaded from https://www.gw-openscience.org/eventapi/html/
 
 log_likelihood
 the logarithm of the likelihood
