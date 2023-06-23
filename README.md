@@ -1,5 +1,5 @@
 
-# Detection of Isolated Mass Gap Black Holes Through Data Driven Analysis
+# Data Driven Detection of Isolated Mass Gap Black Holes
 
 
 ## File Structure
@@ -22,6 +22,4 @@
  - Saved Model: model is saved in tensorflow default format: can be loaded and used as shown in `evaluation.py`
 
 
-## Text
 
-This is a supplement to: "Detection of Isolated Mass Gap Black Holes Through Data Driven Analysis" by Rohit Kulkarni and Shlesh Sakpal
