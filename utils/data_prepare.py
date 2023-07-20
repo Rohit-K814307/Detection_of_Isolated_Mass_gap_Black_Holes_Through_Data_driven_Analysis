@@ -35,8 +35,8 @@ import itertools
 
 def read_data():
     #get black hole data from popsycle dataset
-    pops = Table.read("data/popsycle_sim.fits").to_pandas()
-    ob = Table.read("data/OB110462_DW_post.fits").to_pandas()
+    pops = Table.read("../data/popsycle_sim.fits").to_pandas()
+    ob = Table.read("../data/OB110462_DW_post.fits").to_pandas()
     print("data read")
 
     for i in range(len(pops)):
@@ -140,3 +140,5 @@ def generate_CTGan():
     t = pd.concat([df_ob_ns_no_target,gen_x])
     f = pd.concat([df_ob_ns_only_target,pd.DataFrame(gen_y.to_numpy(),columns=["target"])])
     return pd.concat([t,f], axis=1).reset_index(drop=True)
+
+read_data()

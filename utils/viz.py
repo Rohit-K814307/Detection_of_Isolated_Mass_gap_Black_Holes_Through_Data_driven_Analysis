@@ -1,4 +1,4 @@
-from data_prepare import *
+from utils.data_prepare import *
 
 #generate GAN data
 eda_data = generate_CTGan()

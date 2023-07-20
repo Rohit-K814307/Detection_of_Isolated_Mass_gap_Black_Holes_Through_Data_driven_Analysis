@@ -1,44 +1,34 @@
-from data_preprocess import *
+#math/viz
+import numpy as np
+from astropy.table import Table
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import sys
+from collections import OrderedDict
+import math
+from tqdm import tqdm
+from matplotlib import rcParams
+
+#ML Libraries
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import DataLoader, Dataset
+from tabgan.sampler import GANGenerator
 
 
-class CustomDataset(Dataset):
-    
-    def __init__(self,m_g_objects,m_g_targets):
-        x = m_g_objects.values
-        y = m_g_targets.values
-    
-        self.x_train=torch.tensor(x,dtype=torch.float32)
-        self.y_train=torch.tensor(y,dtype=torch.float32)
-    
-    def __len__(self):
-        return len(self.y_train)
-    
-    def __getitem__(self,idx):
-        return self.x_train[idx],self.y_train[idx]
-
-def initialize():
-
-    x_train, x_test, y_train, y_test = preprocess()
-
-    X_train = torch.tensor(x_train.values)
-    Y_train = torch.tensor(y_train.values)
-    X_test = torch.tensor(x_test.values)
-    Y_test = torch.tensor(y_test.values)
-
-    bh_ns = CustomDataset(x_train,y_train)
-    train_loader = DataLoader(bh_ns,batch_size=10,shuffle=False)
-
-    bh_ns_two = CustomDataset(x_test, y_test)
-    test_loader = DataLoader(bh_ns_two)
-
-
-    return X_train, Y_train, X_test, Y_test, train_loader, test_loader
-
-
-###############################################################
-###############################################################
-###############################################################
-
+#data processing
+from sklearn.model_selection import train_test_split
+from sklearn import preprocessing
+from imblearn.combine import SMOTETomek
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import f1_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import confusion_matrix
+import itertools
 
 '''Define RBM and DBN'''
 
@@ -378,23 +368,144 @@ class DBN(nn.Module):
         self.rbm_layers[ith_layer].train(_dataloader, num_epochs,batch_size)
         return
 
+class RBF(nn.Module):
+   
+    def __init__(self, in_features, out_features, basis_func):
+        super(RBF, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.centres = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.log_sigmas = nn.Parameter(torch.Tensor(out_features))
+        self.basis_func = basis_func
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.normal_(self.centres, 0, 1)
+        nn.init.constant_(self.log_sigmas, 0)
+
+    def forward(self, input):
+        size = (input.size(0), self.out_features, self.in_features)
+        x = input.unsqueeze(1).expand(size)
+        c = self.centres.unsqueeze(0).expand(size)
+        distances = (x - c).pow(2).sum(-1).pow(0.5) / torch.exp(self.log_sigmas).unsqueeze(0)
+        return self.basis_func(distances)
 
 
 
+# RBFs
 
-if __name__ == '__main__':
-    dbn_bhns = DBN(visible_units=10 ,
-        hidden_units=[23*23 ,1*1] ,
-        k = 5,
-        learning_rate = 0.01,
-        learning_rate_decay = True,
-        xavier_init = True,
-        increase_to_cd_k = False,
-        use_gpu = False
-    )
+def gaussian(alpha):
+    phi = torch.exp(-1*alpha.pow(2))
+    return phi
 
-    dbn_bhns.train_static(X_train, Y_train, 20, batch_size=10)
+def linear(alpha):
+    phi = alpha
+    return phi
 
+def quadratic(alpha):
+    phi = alpha.pow(2)
+    return phi
 
-    ##
+def inverse_quadratic(alpha):
+    phi = torch.ones_like(alpha) / (torch.ones_like(alpha) + alpha.pow(2))
+    return phi
+
+def multiquadric(alpha):
+    phi = (torch.ones_like(alpha) + alpha.pow(2)).pow(0.5)
+    return phi
+
+def inverse_multiquadric(alpha):
+    phi = torch.ones_like(alpha) / (torch.ones_like(alpha) + alpha.pow(2)).pow(0.5)
+    return phi
+
+def spline(alpha):
+    phi = (alpha.pow(2) * torch.log(alpha + torch.ones_like(alpha)))
+    return phi
+
+def poisson_one(alpha):
+    phi = (alpha - torch.ones_like(alpha)) * torch.exp(-alpha)
+    return phi
+
+def poisson_two(alpha):
+    phi = ((alpha - 2*torch.ones_like(alpha)) / 2*torch.ones_like(alpha)) \
+    * alpha * torch.exp(-alpha)
+    return phi
+
+def matern32(alpha):
+    phi = (torch.ones_like(alpha) + 3**0.5*alpha)*torch.exp(-3**0.5*alpha)
+    return phi
+
+def matern52(alpha):
+    phi = (torch.ones_like(alpha) + 5**0.5*alpha + (5/3) \
+    * alpha.pow(2))*torch.exp(-5**0.5*alpha)
+    return phi
+
+def basis_func_dict():
+   
+    bases = {'gaussian': gaussian,
+             'linear': linear,
+             'quadratic': quadratic,
+             'inverse quadratic': inverse_quadratic,
+             'multiquadric': multiquadric,
+             'inverse multiquadric': inverse_multiquadric,
+             'spline': spline,
+             'poisson one': poisson_one,
+             'poisson two': poisson_two,
+             'matern32': matern32,
+             'matern52': matern52}
+    return bases
+
+class RadialBasisNet(nn.Module):
     
+    def __init__(self, layer_widths, layer_centres, basis_func):
+        super(RadialBasisNet, self).__init__()
+        self.rbf_layers = nn.ModuleList()
+        self.linear_layers = nn.ModuleList()
+        for i in range(len(layer_widths) - 1):
+            self.rbf_layers.append(RBF(layer_widths[i], layer_centres[i], basis_func))
+            self.linear_layers.append(nn.Linear(layer_centres[i], layer_widths[i+1]))
+    
+    def forward(self, x):
+        out = x
+        for i in range(len(self.rbf_layers)):
+            out = self.rbf_layers[i](out)
+            out = self.linear_layers[i](out)
+        return out
+    
+    def fit(self, epochs, lr, loss_func):
+        self.train()
+        obs = torch.tensor(x_train.to_numpy()).size(0)
+        trainloader = train_loader
+        optimiser = torch.optim.Adam(self.parameters(), lr=lr)
+        epoch = 0
+        while epoch < epochs:
+            epoch += 1
+            current_loss = 0
+            batches = 0
+            progress = 0
+            for x_batch, y_batch in trainloader:
+                batches += 1
+                optimiser.zero_grad()
+                y_hat = self.forward(x_batch)
+                print(y_hat.shape,y_batch.shape)
+                y_batch = y_batch.unsqueeze(1)
+                loss = loss_func(y_hat, y_batch)
+                current_loss += (1/batches) * (loss.item() - current_loss)
+                loss.backward()
+                optimiser.step()
+                progress += y_batch.size(0)
+                sys.stdout.write('\rEpoch: %d, Progress: %d/%d, Loss: %f      ' % \
+                                 (epoch, progress, obs, current_loss))
+                sys.stdout.flush()
+
+
+
+def mpnet():
+    return nn.Sequential(OrderedDict([
+        ('dense1', nn.Linear(10, 100)),
+        ('act1', nn.ReLU()),
+        ('dense2', nn.Linear(100, 50)),
+        ('act2', nn.ReLU()),
+        ('output', nn.Linear(50, 1)),
+        ('outact', nn.Sigmoid()),
+    ]))
